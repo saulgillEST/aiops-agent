@@ -1,33 +1,35 @@
 import typer
 from aiops.agent import plan_task
 from aiops.skills import SKILLS
+from aiops.tools import resolve_parameters
 
 app = typer.Typer(help="AIOps Agent CLI")
 
 @app.command()
-def install(prompt: str):
+def install(skill_name: str):
     """
-    Prompt-driven install command. The agent will select and run skills.
+    Install a skill by name, asking for missing parameters interactively.
     """
-    while True:
-        plan = plan_task(prompt)
-        typer.echo(f"\nPlan summary: {plan['summary']}\n")
+    skill = SKILLS.get(skill_name)
+    if not skill:
+        typer.echo(f"❌ Skill '{skill_name}' not found")
+        return
 
-        for a in plan.get("actions", []):
-            kind, cmd, params = a.get("run"), a.get("cmd"), a.get("params", {})
-            if kind == "skill":
-                skill = SKILLS.get(cmd)
-                if not skill:
-                    typer.echo(f"❌ Skill {cmd} not found")
-                    continue
-                next_input = skill["entrypoint"](**params)
-                if next_input:
-                    prompt = next_input  # update prompt for next iteration
-            else:
-                typer.echo(f"Unknown action type: {kind}")
-        # Ask if user wants to continue
-        if not typer.confirm("Do you want to continue with further instructions?"):
+    typer.echo(f"Running skill: {skill_name}")
+
+    # Resolve parameters interactively
+    params = resolve_parameters(skill)
+
+    # Call the skill entrypoint
+    next_prompt = skill["entrypoint"](**params)
+
+    # If the skill returned a next task, loop
+    while next_prompt:
+        typer.echo(f"\nNext task: {next_prompt}")
+        if not typer.confirm("Do you want to continue?"):
             break
+        params = resolve_parameters(skill)
+        next_prompt = skill["entrypoint"](**params)
 
 if __name__ == "__main__":
     app()

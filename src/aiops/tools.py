@@ -10,3 +10,16 @@ def run_cmd(cmd: str, live: bool = True) -> int:
 def confirm(prompt: str) -> bool:
     resp = input(f"{prompt} [y/N]: ").strip().lower()
     return resp in ("y", "yes")
+
+def resolve_parameters(skill):
+    """
+    Ask the user for any required parameters that were not provided.
+    """
+    params = {}
+    for name, desc in skill["parameters"].items():
+        value = None
+        while not value:
+            value = input(f"Please provide {name} ({desc}): ").strip()
+        params[name] = value
+    return params
+
