@@ -1,1 +1,1 @@
-from aiops.cli import app
+from .cli import app

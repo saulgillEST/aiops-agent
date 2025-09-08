@@ -1,0 +1,22 @@
+[project]
+name = "aiops-agent"
+version = "0.1.0"
+description = "Prompt-driven AI Ops agent"
+authors = [{name = "Your Name"}]
+readme = "README.md"
+
+dependencies = [
+    "typer>=0.7.0",
+    "toml>=0.10.2",     # 👈 change from tomli → toml
+    "requests>=2.28.0",
+    "openai>=1.40.0",
+    "rich>=13.0.0",      # 👈 optional: for better output
+    "python-dotenv>=1.1.0"
+]
+
+[project.scripts]
+aiops = "aiops.cli:app"
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"

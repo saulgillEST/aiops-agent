@@ -1,35 +1,65 @@
 import typer
-from aiops.agent import plan_task
-from aiops.skills import SKILLS
-from aiops.tools import resolve_parameters
+import os
+from dotenv import load_dotenv
+# Load environment variables from .env file
+load_dotenv()  # automatically loads variables into os.environ
+# Optional: fallback if key not set
+if "OPENAI_API_KEY" not in os.environ:
+    print("Warning: OPENAI_API_KEY not found. Some features will not work.")
 
-app = typer.Typer(help="AIOps Agent CLI")
+from .orchestrator import run_session
+from .llm.openai_client import OpenAIClient
+from .skills_loader import load_skill_context
+from .retrieval import fetch_urls_from_text, fetch_text
+from .config import load_config
+from .state_manager import StateManager
 
-@app.command()
-def install(skill_name: str):
-    """
-    Install a skill by name, asking for missing parameters interactively.
-    """
-    skill = SKILLS.get(skill_name)
-    if not skill:
-        typer.echo(f"❌ Skill '{skill_name}' not found")
-        return
+app = typer.Typer(help="AIOps conversational agent")
 
-    typer.echo(f"Running skill: {skill_name}")
+@app.command("start")
+def start(
+        reset: bool = typer.Option(
+            False,
+            "--reset",
+            help="Clear conversation history before starting",
+        )
+):
+    cfg = load_config()
+    provider = cfg.get("llm", {}).get("provider", "openai")
+    model = cfg.get("llm", {}).get("model", "gpt-4o-mini")
+    api_env = cfg.get("llm", {}).get("api_key_env", "OPENAI_API_KEY")
+    if provider == "openai":
+        llm = OpenAIClient(model, api_key_env=api_env)
+    else:
+        raise typer.Exit("LLM provider not supported in v1")
 
-    # Resolve parameters interactively
-    params = resolve_parameters(skill)
+    skill_ctx = load_skill_context()
 
-    # Call the skill entrypoint
-    next_prompt = skill["entrypoint"](**params)
+    state = StateManager(persistent=cfg.get('session',{}).get('persistent_memory', True),
+                         workspace_dir=cfg.get('execution',{}).get('working_dir','./.aiops_workspace'))
 
-    # If the skill returned a next task, loop
-    while next_prompt:
-        typer.echo(f"\nNext task: {next_prompt}")
-        if not typer.confirm("Do you want to continue?"):
-            break
-        params = resolve_parameters(skill)
-        next_prompt = skill["entrypoint"](**params)
+    if reset:
+        state.clear()
+        print("Conversation history cleared.")
 
-if __name__ == "__main__":
+    print("🤖 AIOps Agent ready. Type 'exit' or Ctrl-D to quit.")
+    try:
+        while True:
+            p = input("aiops> ").strip()
+            if not p:
+                continue
+            if p.lower() in ("exit","quit"):
+                print("Goodbye.")
+                break
+            urls = fetch_urls_from_text(p)
+            docs = []
+            for u in urls:
+                try:
+                    docs.append(fetch_text(u))
+                except Exception as e:
+                    print(f"Warning: couldn't fetch {u}: {e}")
+            run_session(llm, skill_ctx, "\n\n".join(docs), [p], cfg, state)
+    except (EOFError, KeyboardInterrupt):
+        print("\nGoodbye.")
+if __name__ == '__main__':
     app()
