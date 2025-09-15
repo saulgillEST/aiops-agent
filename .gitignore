@@ -3,6 +3,7 @@
 *.pyc
 *.pyo
 *.pyd
+*.iml
 env/
 venv/
 ENV/

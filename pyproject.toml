@@ -11,11 +11,12 @@ dependencies = [
     "requests>=2.28.0",
     "openai>=1.40.0",
     "rich>=13.0.0",      # 👈 optional: for better output
-    "python-dotenv>=1.1.0"
+    "python-dotenv>=1.1.0",
+    "python-frontmatter>=1.1.0"
 ]
 
 [project.scripts]
-aiops = "aiops.cli:app"
+aiops = "aiops.cli:main"
 
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]

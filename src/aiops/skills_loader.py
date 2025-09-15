@@ -1,11 +1,20 @@
+# src/aiops/skills_loader.py
+
+import os
 from pathlib import Path
-def load_skill_context(skills_dir: str = None):
-    base = Path(__file__).parent
-    skills_path = base / 'skills' if skills_dir is None else Path(skills_dir)
-    buf = []
-    for p in sorted(skills_path.glob('*.md')):
-        try:
-            buf.append(p.read_text())
-        except Exception:
-            pass
-    return '\n\n'.join(buf)
+import frontmatter
+
+SKILLS_DIR = Path(__file__).parent / "skills"
+
+def load_skills():
+    skills = {}
+    for fname in os.listdir(SKILLS_DIR):
+        if fname.endswith(".md"):
+            path = os.path.join(SKILLS_DIR, fname)
+            doc = frontmatter.load(path)
+            skills[doc["name"]] = {
+                "intents": doc.get("intents", []),
+                "keywords": doc.get("keywords", []),
+                "system_prompt": doc.content.strip()
+            }
+    return skills

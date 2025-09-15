@@ -1,42 +1,54 @@
-import toml
+# src/aiops/config.py
+
+import tomli
 from pathlib import Path
+from dotenv import load_dotenv
+import os
+from rich.console import Console
+
+ENV_PATH = Path(__file__).parent.parent / ".env"
+load_dotenv(dotenv_path=ENV_PATH)
+
+# Make sure API key is in environment
+if "OPENAI_API_KEY" not in os.environ:
+    raise RuntimeError("OPENAI_API_KEY not found in .env")
 
 DEFAULT_CONFIG = {
-    "execution": {
-        "run_mode": "ask",        # ask | auto
-        "shell": "/bin/bash",
-        "working_dir": "./.aiops_workspace",
-        "sandbox": None           # "docker" or None
-    },
     "llm": {
         "provider": "openai",
         "model": "gpt-4o-mini",
         "api_key_env": "OPENAI_API_KEY"
     },
     "session": {
-        "persistent_memory": True,
-        "max_log_files": 10,
-        "max_log_size_mb": 10
+        "persistent_memory": True
     },
-    "fetch": {
-        "allow_live_web": True
+    "execution": {
+        "working_dir": "./.aiops_workspace",
+        "auto_run_if_confident": False
     }
 }
 
-def load_config(path: str = "../aiops.toml") -> dict:
-    p = Path(path)
-    if p.exists():
-        try:
-            user_cfg = toml.load(p)
-            return merge_dicts(DEFAULT_CONFIG, user_cfg)
-        except Exception:
-            return DEFAULT_CONFIG
-    return DEFAULT_CONFIG
 
-def merge_dicts(base, override):
-    for k, v in override.items():
-        if isinstance(v, dict) and k in base:
-            base[k] = merge_dicts(base[k], v)
-        else:
-            base[k] = v
-    return base
+def load_config(config_path: str = "aiops_config.toml"):
+    """
+    Load configuration from TOML file. If file doesn't exist, use defaults.
+    """
+    cfg_file = Path(config_path)
+    console = Console()
+    if cfg_file.exists():
+        with open(cfg_file, "rb") as f:
+            try:
+                cfg = tomli.load(f)
+                merged = DEFAULT_CONFIG.copy()
+                # Deep merge of nested dicts
+                for k, v in cfg.items():
+                    if isinstance(v, dict):
+                        merged[k].update(v)
+                    else:
+                        merged[k] = v
+                return merged
+            except Exception as e:
+                console.print(f"⚠️  Failed to parse {config_path}: {e}", style="red")
+                return DEFAULT_CONFIG
+    else:
+        return DEFAULT_CONFIG
