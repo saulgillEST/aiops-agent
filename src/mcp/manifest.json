@@ -1,0 +1,13 @@
+{
+  "name": "smo-bash-server",
+  "description": "Runs generated bash scripts safely on the local system.",
+  "entry": {
+    "command": "python",
+    "args": ["mcp_server.py"]
+  },
+  "capabilities": {
+    "tools": true,
+    "resources": false,
+    "files": false
+  }
+}

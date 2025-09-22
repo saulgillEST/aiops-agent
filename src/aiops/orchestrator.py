@@ -9,10 +9,14 @@ from rich.table import Table
 from .skills_loader import load_skills
 from .skills_router import SkillRouter
 import readline
+from .rag import WebRAG
+from .config import Config
 
 
 class Orchestrator:
     def __init__(self, client, state_manager):
+        self.rag = WebRAG()
+        self.cfg = Config().load_config()
         self.client = client
         self.state_manager = state_manager
         self.skills = load_skills()
@@ -78,6 +82,7 @@ class Orchestrator:
         table.add_column("Description", style="cyan")
 
         table.add_row("help", "Show this help message")
+        table.add_row("new <title>", "Create a new conversation with optional title")
         table.add_row("list", "List all conversations")
         table.add_row("status", "Show current active conversation")
         table.add_row("switch <id>", "Switch to another conversation")
@@ -204,6 +209,29 @@ class Orchestrator:
         title = conversations.get(conv_id, {}).get("title", "Untitled")
         self.console.print(f"🟢 Active conversation: {conv_id} - {title}", style="green")
 
+    def augment_with_rag(self, user_prompt: str) -> str:
+        similarity_threshold = self.cfg.get("rag", {}).get("similarity_threshold", 0.6)
+        retrieved = self.rag.query(user_prompt, top_k=3, min_similarity=similarity_threshold)
+
+        if not retrieved:
+            # If nothing found, do web search and re-query
+            self.rag.web_search_and_store(user_prompt)
+            retrieved = self.rag.query(user_prompt, top_k=3)
+
+        if not retrieved:
+            # fallback → still wrap in dict format
+            retrieved = [{"text": user_prompt, "url": "local"}]
+
+        context = "\n".join([f"- {item['text']} (Source: {item['url']})" for item in retrieved])
+        self.console.print(f"🔍 Retrieved {len(context)} relevant documents via RAG.", style="green")
+
+        return f"""User request:
+    {user_prompt}
+    
+    Relevant context:
+    {context}
+    """
+
     def handle_user_input(self, user_input: str):
         """Route the user input to skills, send to OpenAI, and handle response."""
 
@@ -227,7 +255,17 @@ class Orchestrator:
         conv_meta = self.state_manager.list_conversations().get(conv_id, {})
         prev_resp_id = conv_meta.get("last_response_id")
 
-        # 5. Send message to OpenAI
+        # 5. If RAG is enabled, perform web search and add context
+        if self.cfg.get("rag", {}).get("allow_rag", True):
+            retrieved = self.augment_with_rag(user_input)
+            if retrieved:
+                # context = "\n".join([f"- {item['text']} (Source: {item['url']})" for item in retrieved])
+                user_input = f"{user_input}\n\nRelevant information:\n{retrieved}"
+                self.console.print(f"🔍 Retrieved {len(retrieved)} relevant documents via RAG.", style="green")
+            else:
+                self.console.print("🔍 No relevant documents found via RAG.", style="yellow")
+
+        # 6. Send message to OpenAI
         response, resp_id = self.client.send_message(
             conversation_id=conv_id if not prev_resp_id else None,
             previous_response_id=prev_resp_id if prev_resp_id else None,
@@ -242,3 +280,28 @@ class Orchestrator:
 
         # 7. Show response
         self.console.print(f"\n🤖 {response}\n", style="bold white")
+
+
+
+    async def connect_to_mcp(self):
+        # Spawn the server
+        server = subprocess.Popen(
+            ["python", "mcp_server.py"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+
+        client = StdioClient(stdin=server.stdin, stdout=server.stdout)
+
+        await client.start()
+        return client, server
+
+    async def run_script_via_mcp(self, script: str):
+        client, server = await self.connect_to_mcp()
+        try:
+            result = await client.call_tool("run_bash", {"script": script})
+            return result
+        finally:
+            server.kill()
